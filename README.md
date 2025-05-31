@@ -1,4 +1,4 @@
-# Wireguard Copier
+# Connect And Copy
 
 ## 🚀 Copy Home with Ease
 
