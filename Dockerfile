@@ -1,11 +1,13 @@
-FROM ubuntu:20.04
+FROM alpine:3.22.0
 
 # Cause dnsutil is weird
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=Australia/Brisbane
-RUN apt-get update && \
-    apt-get install -y dnsutils cifs-utils tzdata \
-        wireguard iproute2 openresolv iputils-ping smbclient rsync
+# ENV DEBIAN_FRONTEND=noninteractive
+# ENV TZ=Australia/Brisbane
+RUN apk update && \
+    apk add --no-cache \
+        bind-tools cifs-utils tzdata \
+        wireguard-tools iproute2 openresolv iputils rsync bash
+
 
 
 RUN wg genkey | tee private.key | wg pubkey > public.key
