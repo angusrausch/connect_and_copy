@@ -1,0 +1,32 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build and tag Docker image
+        run: |
+          docker build -t $DOCKER_USERNAME/connect_and_copy:${GITHUB_REF_NAME} .
+          docker tag $DOCKER_USERNAME/connect_and_copy:${GITHUB_REF_NAME} $DOCKER_USERNAME/connect_and_copy:latest
+
+      - name: Docker login
+        run: |
+          # It's safer to pass password/token via stdin to avoid exposing it in logs.
+          # Ensure your secret name is correct: DOCKER_HUB_TOKEN
+          echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u $DOCKER_USERNAME --password-stdin
+
+      - name: Push Docker image
+        run: |
+          docker push $DOCKER_USERNAME/connect_and_copy:${GITHUB_REF_NAME}
+          docker push $DOCKER_USERNAME/connect_and_copy:latest
