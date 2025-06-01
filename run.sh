@@ -19,17 +19,41 @@ ABSOLUTE_FOLDER_PATH=$(readlink -f "$COPY_FOLDER")
 FOLDER_NAME=$(basename "$ABSOLUTE_FOLDER_PATH")
 
 ABSOLUTE_CONFIG_PATH=$(readlink -f "$CONFIG_FILE")
+ABSOLUTE_SSH_PRIVATE_KEY_FILE="$(eval echo $SSH_PRIVATE_KEY_FILE)"
 
-echo "\n${BLUE}Starting Container${NC}\n"
-docker run \
+shopt -s nocasematch
+if [[ "$HOST_TYPE" == "smb" ]]; then
+  echo "\n${BLUE}Starting Container${NC}\n"
+  docker run \
     --rm -it \
     --network bridge \
     --privileged \
     -v $ABSOLUTE_FOLDER_PATH:/tmp/copy_from/$FOLDER_NAME \
     -v $ABSOLUTE_CONFIG_PATH:/tmp/config/wg0.conf \
+    -e HOST_TYPE=$HOST_TYPE \
     -e REMOTE_HOST=$REMOTE_HOST \
     -e REMOTE_SHARE=$REMOTE_SHARE \
     -e REMOTE_LOCATION=$REMOTE_LOCATION \
     -e USERNAME=$USERNAME \
     -e PASSWORD=$PASSWORD \
     connect_and_copy
+elif [[ "$HOST_TYPE" == "ssh" ]]; then
+  echo "$ABSOLUTE_SSH_PRIVATE_KEY_FILE"
+  if [ -z "$ABSOLUTE_SSH_PRIVATE_KEY_FILE" ]; then
+    echo "\n${RED}No SSH Key File specified${NC}"
+    exit
+  fi
+  echo "\n${BLUE}Starting Container${NC}\n"
+  docker run \
+    --rm -it \
+    --network bridge \
+    --privileged \
+    -v $ABSOLUTE_FOLDER_PATH:/tmp/copy_from/$FOLDER_NAME \
+    -v $ABSOLUTE_CONFIG_PATH:/tmp/config/wg0.conf \
+    -v $ABSOLUTE_SSH_PRIVATE_KEY_FILE:/.ssh/docker_id \
+    -e HOST_TYPE=$HOST_TYPE \
+    -e REMOTE_HOST=$REMOTE_HOST \
+    -e REMOTE_LOCATION=$REMOTE_LOCATION \
+    -e USERNAME=$USERNAME \
+    connect_and_copy
+fi

@@ -63,47 +63,63 @@ else
     exit 1 # Exit the script as VPN connection is critical
 fi
 
-# Proceed with mounting only if WireGuard connection was successful
-MOUNT_LOCATION=/mnt/remote
-mkdir -p $MOUNT_LOCATION # Use -p to avoid error if directory already exists
+shopt -s nocasematch
+if [[ "$HOST_TYPE" == "smb" ]]; then
+    MOUNT_LOCATION=/mnt/remote
+    mkdir -p $MOUNT_LOCATION # Use -p to avoid error if directory already exists
 
-echo -e "\n${YELLOW}Attempting to mount remote share...${NC}"
-# It's highly recommended to use environment variables for username and password in Docker
-# and ensure they are handled securely (e.g., Docker secrets).
-sudo mount -t cifs -o username=$USERNAME,password=$PASSWORD \
-    //$REMOTE_HOST/$REMOTE_SHARE $MOUNT_LOCATION
+    echo -e "\n${YELLOW}Attempting to mount remote share...${NC}"
+    # It's highly recommended to use environment variables for username and password in Docker
+    # and ensure they are handled securely (e.g., Docker secrets).
+    mount -t cifs -o username=$USERNAME,password=$PASSWORD \
+        //$REMOTE_HOST/$REMOTE_SHARE $MOUNT_LOCATION
 
-MOUNT_EXIT_CODE=$?
-if [ $MOUNT_EXIT_CODE -eq 0 ]; then
-    echo -e "${GREEN}Successfully mounted remote share to /mnt/remote.${NC}"
+    MOUNT_EXIT_CODE=$?
+    if [ $MOUNT_EXIT_CODE -eq 0 ]; then
+        echo -e "${GREEN}Successfully mounted remote share to /mnt/remote.${NC}"
+    else
+        echo -e "${RED}Error: Failed to mount remote share. (Exit code: $MOUNT_EXIT_CODE)${NC}"
+        # You might want to exit here if mounting is critical
+        exit 1
+    fi
+
+    # Can add --bwlimit=KB/s if network limited
+    echo -e "\n${YELLOW}Starting rsync process...${CYAN}"
+    rsync -avz --partial --progress --human-readable --timeout=30 --checksum \
+        /tmp/copy_from/* \
+        $MOUNT_LOCATION/$REMOTE_LOCATION
+
+    RSYNC_EXIT_CODE=$?
+    if [ $RSYNC_EXIT_CODE -eq 0 ]; then
+        echo -e "${GREEN}Successfully copied all contents of directory.${NC}"
+    else
+        echo -e "${RED}Error: rsync failed with exit code $RSYNC_EXIT_CODE.${NC}"
+        exit 1
+    fi
+elif [[ "$HOST_TYPE" == "ssh" ]]; then
+    echo -e "\n${YELLOW}Testing SSH connection...${CYAN}"
+    ssh -T -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$USERNAME@$REMOTE_HOST" -i /.ssh/docker_id true
+    SSH_TEST_EXIT_CODE=$?
+    if [ $SSH_TEST_EXIT_CODE -eq 0 ]; then
+        echo -e "${GREEN}Successfully connected via ssh.${NC}"
+    else 
+        echo -e "${RED}Error connecting to SSH server.${NC}"
+        exit 1
+    fi
+    echo -e "\n${YELLOW}Starting rsync process...${CYAN}"
+    rsync -avz --partial --progress --human-readable --timeout=30 --checksum \
+        -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i /.ssh/docker_id" \
+        /tmp/copy_from/* "$USERNAME@$REMOTE_HOST:$REMOTE_LOCATION" 
+
+    RSYNC_EXIT_CODE=$?
+    if [ $RSYNC_EXIT_CODE -eq 0 ]; then
+        echo -e "${GREEN}Successfully copied all contents of directory.${NC}"
+    else
+        echo -e "${RED}Error: rsync failed with exit code $RSYNC_EXIT_CODE.${NC}"
+        exit 1
+    fi
 else
-    echo -e "${RED}Error: Failed to mount remote share. (Exit code: $MOUNT_EXIT_CODE)${NC}"
-    # You might want to exit here if mounting is critical
-    exit 1
-fi
-
-# Can add --bwlimit=KB/s if network limited
-echo -e "\n${YELLOW}Starting rsync process...${CYAN}"
-rsync -avz --partial --progress --human-readable --timeout=30  \
-    /tmp/copy_from/* \
-    $MOUNT_LOCATION/$REMOTE_LOCATION
-
-RSYNC_EXIT_CODE=$?
-if [ $RSYNC_EXIT_CODE -eq 0 ]; then
-    echo -e "${GREEN}Successfully copied all contents of directory.${NC}"
-else
-    echo -e "${RED}Error: rsync failed with exit code $RSYNC_EXIT_CODE.${NC}"
-    exit 1
-fi
-
-echo -e "\n${YELLOW}Checking directoy integrity${CYAN}"
-rsync -avzc --dry-run /tmp/copy_from/ "$MOUNT_LOCATION/$REMOTE_LOCATION"
-INTEGRITY_RSYNC_EXIT_CODE=$?
-if [ $INTEGRITY_RSYNC_EXIT_CODE -eq 0 ]; then
-    echo -e "${GREEN}Successfully verified integrity${NC}"
-else
-    echo -e "${RED}Error: rsync failed with exit code $INTEGRITY_RSYNC_EXIT_CODE.${NC}"
-    exit 1
+    echo -e "\n${RED}Copy option not chosen${NC}"
 fi
 
 # Optional: Unmount and bring down WireGuard when done
