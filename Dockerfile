@@ -8,8 +8,6 @@ RUN apk update && \
         bind-tools cifs-utils tzdata \
         wireguard-tools iproute2 openresolv iputils rsync bash iptables openssh
 
-
-
 RUN wg genkey | tee private.key | wg pubkey > public.key
 
 COPY ./entrypoint.sh /

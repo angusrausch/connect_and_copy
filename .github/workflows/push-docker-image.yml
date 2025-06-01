@@ -47,20 +47,42 @@ jobs:
 
           echo "NEXT_TAG=$NEXT_TAG" >> $GITHUB_OUTPUT
 
-      - name: Build and tag Docker image
-        run: |
-          IMAGE_TAG=${{ steps.get_tag.outputs.NEXT_TAG }}
-          echo "Building Docker image with tag: ${{ env.DOCKER_USERNAME }}/connect_and_copy:$IMAGE_TAG"
-          docker build -t ${{ env.DOCKER_USERNAME }}/connect_and_copy:$IMAGE_TAG .
-          docker tag ${{ env.DOCKER_USERNAME }}/connect_and_copy:$IMAGE_TAG ${{ env.DOCKER_USERNAME }}/connect_and_copy:latest
-
       - name: Docker login
         run: |
           echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u ${{ env.DOCKER_USERNAME }} --password-stdin
 
-      - name: Push Docker image
+      - name: Try to pull latest image (optional)
+        continue-on-error: true
+        run: docker pull ${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}:latest
+
+      - name: Build new image
         run: |
-          IMAGE_TAG=${{ steps.get_tag.outputs.NEXT_TAG }}
-          echo "Pushing Docker image with tag: ${{ env.DOCKER_USERNAME }}/connect_and_copy:$IMAGE_TAG"
-          docker push ${{ env.DOCKER_USERNAME }}/connect_and_copy:$IMAGE_TAG
-          docker push ${{ env.DOCKER_USERNAME }}/connect_and_copy:latest
+          IMAGE=${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}
+          docker build -t $IMAGE:temp_build .
+
+      - name: Compare digests
+        id: digest_check
+        run: |
+          IMAGE=${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}
+          NEW_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $IMAGE:temp_build | cut -d@ -f2 || echo "none")
+          OLD_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $IMAGE:latest | cut -d@ -f2 || echo "none")
+
+          echo "New image digest: $NEW_DIGEST"
+          echo "Existing latest digest: $OLD_DIGEST"
+
+          if [ "$NEW_DIGEST" = "$OLD_DIGEST" ]; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Tag and push new version
+        if: steps.digest_check.outputs.changed == 'true'
+        run: |
+          IMAGE=${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}
+          TAG=${{ steps.get_tag.outputs.NEXT_TAG }}
+
+          docker tag $IMAGE:temp_build $IMAGE:$TAG
+          docker tag $IMAGE:temp_build $IMAGE:latest
+          docker push $IMAGE:$TAG
+          docker push $IMAGE:latest
